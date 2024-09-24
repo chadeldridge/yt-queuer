@@ -19,7 +19,12 @@
 
 # Go workspace file
 go.work
-go.work.sum
 
-# env file
-.env
+# Ignore symlinks
+# Ignore top-level directory 'assets' but do not ignore 'assets' in subdirectories
+assets
+!*/assets
+
+# Other directories to ignore
+bin/
+pkg/
