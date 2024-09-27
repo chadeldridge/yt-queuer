@@ -2,7 +2,8 @@
 Lightweight service and addon to enable queueing and playback of youtube videos on a remote device.
 
 ## Planned Features
-- Allow control of playback device (play, pause, seek, next). LOE - Low (figure out callback)
+- Add 'Wake On LAN' for LG WebOS TVs to power button on Controller page. - LOE - Low
+- Add controls for playback device (play, pause, seek, next). LOE - Low (figure out callback)
 - Allow control of multiple playback devices and queues. LOE - Low (client registration since no hostname in js)
 - Create a browser addon as an alternateive to the Controller page. Add options in standard right-click browser menu. LOE - High
 
