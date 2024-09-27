@@ -43,12 +43,12 @@ const getNextVideo = async () => {
         const response = await axios.get('/queue/next');
         if (response.status === 204) {
                 currentVideo = 204;
-                window.setTimeout(getNextVideo, 1000);
+                window.setTimeout(getNextVideo, 2000);
                 return
         }
-        
+
         currentVideo = response.data;
-        player.loadVideoById(currentVideo.videoId, currentVideo.startSeconds);
+        player.loadVideoById(currentVideo.video_id, currentVideo.start_seconds);
 }
 
 const peekNextVideo = async () => {
@@ -61,8 +61,21 @@ const peekNextVideo = async () => {
         nextVideo = response.data;
 }
 
+const removeVideo = async (vid) => {
+        console.log("Removing video: " + vid);
+        const resp = await axios.get('/queue/remove/' + vid);
+        if (resp.status !== 204) {
+                console.log('failed to remove video:' + resp.data.message);
+                return
+        }
+}
+
 const playNextVideo = async () => {
         try {
+                if (currentVideo !== undefined) {
+                        await removeVideo(currentVideo.video_id);
+                }
+
                 await getNextVideo();
                 if (currentVideo === 204) {
                         return
@@ -70,11 +83,7 @@ const playNextVideo = async () => {
 
                 // Peek the next video
                 await peekNextVideo();
-                if (nextVideo.status === 204) {
-                        return
-                }
         } catch(error) {
                 console.error(error);
-                errorDiv.innerHTML = error.response.data.message;
         }
 };

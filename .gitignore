@@ -28,3 +28,5 @@ assets
 # Other directories to ignore
 bin/
 pkg/
+node_modules/
+certs/

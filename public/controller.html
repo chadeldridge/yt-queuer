@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+        <head>
+                <title>yt-queuer</title>
+                <meta charset="UTF-8"/>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+                <link rel="shortcut icon" href="/favicon.ico"/>
+                <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+                <link rel="stylesheet" type="text/css" href="/css/tailwind.min.css"/>
+                <script type="application/javascript" src="/js/axios.min.js"></script>
+        </head>
+        <body class="bg-primary-dark text-text-light">
+                <header class="flex flex-row w-full justify-between items-center p-3 border-b-[0.5px] border-text-disabled">
+                        <div>yt-queuer Control Panel</div>
+                        <div>
+                                <button type="button" class="material-symbols-outlined">power_settings_circle</button>
+                        </div>
+                </header>
+                <div class="flex flex-row">
+                        <div class="flex flex-col">
+                                <div class="flex flex-row">
+                                        <button type="button" class="material-symbols-outlined text-5xl p-3 hover:text-secondary-base" title="Add to Queue" onClick="addVideo()">playlist_add</button>
+                                        <button type="button" class="material-symbols-outlined text-5xl p-3 hover:text-secondary-base" title="Add to Top of Queue" onClick="addNext()">playlist_add_circle</button>
+                                        <button type="button" class="material-symbols-outlined text-5xl p-3 pl-6 hover:text-secondary-base" title="Clear Queue" onClick="clearQueue()">clear_all</button>
+                                </div>
+                        </div>
+                        <div class="flex flex-col">
+                                <div id="results"></div>
+                                <div id="queue"></div>
+                        </div>
+                </div>
+                <script src="/js/controller.js"></script>
+        </body>
+</html>

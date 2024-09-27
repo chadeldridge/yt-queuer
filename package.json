@@ -1,0 +1,15 @@
+{
+  "name": "yt-queuer",
+  "version": "1.0.0",
+  "description": "YouTube video queuer for remote play.",
+  "main": "public/index.html",
+  "scripts": {
+    "build": "tailwindcss build -i public/css/base.css -o public/css/tailwind.min.css --minify",
+    "watch": "tailwindcss build -i public/css/base.css -o public/css/tailwind.min.css --watch"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "tailwindcss": "^3.4.13"
+  }
+}

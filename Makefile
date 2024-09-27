@@ -2,36 +2,48 @@
 
 ROOT_DIR:=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 TARGET_DIR=${ROOT_DIR}/bin
-TARGET_NAME=ytqueuer
-TARGET_APP=$(TARGET_DIR)/$(TARGET_NAME)
+APP_NAME=ytqueuer
+TARGET_APP=$(TARGET_DIR)/$(APP_NAME)
 PACKAGE_DIR=${ROOT_DIR}/pkg
 GOOS=linux
+GOARCH=amd64
 
 tidy:
 	@go mod tidy
 .PHONY: tidy
 
-build: go-build package
+build: npm-build go-build package
+	@echo "Done.\n"
 .PHONY: build
 
-build-arm64: go-build-arm64 package
+build-arm64: npm-build go-build-arm64 go-build package
+	@echo "Done.\n"
 .PHONY: build-arm64
 
-run: build
-	@${TARGET_DIR}/${TARGET_NAME}
+run: npm-build build
+	@${TARGET_DIR}/${APP_NAME}
 .PHONY: run
 
+npm-build:
+	@echo "Building frontend..."
+	@npm run build
+.PHONY: npm-build
+
 go-build:
-	@if [ ! -d ${TARGET_DIR} ]; then mkdir ${TARGET_DIR}; fi && cd cmd/server/ && go build -o ${TARGET_APP}
+	@echo "Building for ${GOOS}/${GOARCH}..."
+	@if [ ! -d ${TARGET_DIR} ]; then mkdir ${TARGET_DIR}; fi && cd cmd/server/ && env GOOS=${GOOS} GOARCH=${GOARCH} go build -o ${TARGET_APP} && cp ${TARGET_APP} ${PACKAGE_DIR}/ytqueuer
 .PHONY: go-build
 
 go-build-arm64:
-	@GOARCH=arm64
-	@TARGET_NAME=${TARGET_NAME}_arm64
-	@TARGET_APP=${TARGET_DIR}/${TARGET_NAME}
-	@if [ ! -d ${TARGET_DIR} ]; then mkdir ${TARGET_DIR}; fi && cd cmd/server/ && go build -o ${TARGET_APP}
+	$(eval GOARCH=arm64)
+	$(eval TARGET_NAME=${APP_NAME}_${GOARCH})
+	$(eval TARGET_APP=${TARGET_DIR}/${TARGET_NAME})
 .PHONY: go-build-arm64
 
 package:
-	@if [ ! -d ${PACKAGE_DIR} ]; then mkdir ${PACKAGE_DIR}; fi && cp ${TARGET_APP} ${PACKAGE_DIR}/ && cp LICENSE ${PACKAGE_DIR} && cp -r public ${PACKAGE_DIR}/
+	@echo "Packaging..."
+	@if [ ! -d ${PACKAGE_DIR} ]; then mkdir ${PACKAGE_DIR}; fi || exit 1
+	@cp ${TARGET_APP} ${PACKAGE_DIR}/${APP_NAME}
+	@cp LICENSE ${PACKAGE_DIR}/
+	@cp -r public ${PACKAGE_DIR}/
 .PHONY: package
