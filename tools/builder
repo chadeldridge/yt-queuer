@@ -1,0 +1,206 @@
+#!/bin/bash
+
+# Try to find where our common.sh file is so we can source.
+TOOLS=
+if [[ -f tools/common.sh ]]; then
+        TOOLS="tools"
+elif [[ -f common.sh ]]; then
+        TOOLS=.
+else
+        echo "common.sh not found: " `pwd`
+        exit 1
+fi
+source $TOOLS/common.sh
+
+help() {
+        echo "Usage: $0 [options] <app> <os> <arch> [-- <build args>]"
+        echo
+        echo "Options:"
+        echo "  -c, --cgo-enabled Enable CGO"
+        echo "  -h, --hash        Commit hash to use for build. Assumes cmd.BuildHash is used in the app."
+        echo "      --help        Display this help message"
+        echo "  -o, --output      Output binary name"
+        echo "  -s, --strip       Strip the binary"
+        echo "  -t, --time        Set the build time. Assumes cmd.BuildTime is used in the app."
+        echo "  -u, --user        Set the build user. Assumes cmd.BuildUser is used in the app."
+        echo "      --verbose     Enable verbose output"
+        echo "  -v, --version     Set the version. Assumes cmd.BuildVersion is used in the app."
+        echo
+        echo "cmd.BuildHash will also be set to the current git hash."
+        echo
+}
+
+build_ldflags() {
+        # Remove -s if you need to look at variables in the binary (go tool nm <binary> | grep <varName>)
+        local -a ldflags=
+        if $STRIP; then
+                ldflags+="-s -w"
+        fi
+        if [[ -n "$HASH" ]]; then
+                ldflags+=" -X 'github.com/chadeldridge/yt-queuer/cmd.BuildHash=$HASH'"
+        fi
+        if [[ -n "$TIME" ]]; then
+                ldflags+=" -X 'github.com/chadeldridge/yt-queuer/cmd.BuildTime=$TIME'"
+        fi
+        if [[ -n "$USER" ]]; then
+                ldflags+=" -X 'github.com/chadeldridge/yt-queuer/cmd.BuildUser=$USER'"
+        fi
+        if [[ -n "$VERSION" ]]; then
+                ldflags+=" -X 'github.com/chadeldridge/yt-queuer/cmd.BuildVersion=$VERSION'"
+        fi
+
+        echo $ldflags
+}
+
+get_main() {
+        local app=$1
+        # If they gave us a file, use it.
+        if [[ -f $app ]]; then
+                echo $app
+                return
+        fi
+
+        local dir=
+        # If they gave us a directory, use it.
+        if [[ -d $app ]]; then
+                dir=$app
+        # See if the app name is in the cmd directory.
+        elif [[ -d cmd/$app ]]; then
+                dir=cmd/$app
+        # Assume the current directory must contain package main.
+        else
+                dir=.
+        fi
+
+        # If main.go exists in the directory, use it.
+        if [[ -f $dir/main.go ]]; then
+                echo $dir/main.go
+                return
+        fi
+
+        # Try to find package main in the directory. They might not have used main.go.
+        local main=$(find $dir -name '*.go' -exec grep -H "package main" {} \; | cut -d: -f1 | head -n 1)
+        if [[ -n "$main" ]]; then
+                echo $main
+                return
+        fi
+
+        echo "package main not found"
+        echo
+        help
+        exit 1
+}
+
+OPTS=$(getopt -o ch:o:st:u:v: --long cgo-enabled,hash:,help,output:,strip,time:,user:,verbose,version: -n 'builder' -- "$@")
+if [ $? != 0 ]; then echo; help; exit 1; fi
+
+eval set -- "$OPTS"
+
+CC=
+CXX=
+O_NAME=
+HASH=$(git rev-parse HEAD)
+STRIP=false
+TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+USER=$(git config user.email)
+verbose=false
+VERSION=dev
+CGO_ENABLED=0
+
+set -e
+
+while true; do
+        case $1 in
+                --) shift; break ;;
+                -c | --cgo-enabled) CGO_ENABLED=1; shift ;;
+                -h | --hash) HASH=$2; shift 2 ;;
+                --help) help; exit 0 ;;
+                -o | --output) O_NAME=$2; shift 2 ;;
+                -s | --strip) STRIP=true; shift ;;
+                -t | --time) TIME=$2; shift 2 ;;
+                -u | --user) USER=$2; shift 2 ;;
+                --verbose) VERBOSE=true; shift ;;
+                -v | --version) VERSION=$2; shift 2 ;;
+                *) help; exit 1 ;;
+        esac
+done
+
+if [[ -z "$1" ]]; then
+        echo "app name is required"
+        help
+        exit 1
+fi
+APP=$1
+shift
+
+if [[ -z "$1" ]]; then
+        echo "os is required"
+        help
+        exit 1
+fi
+GOOS=$1
+shift
+
+if [[ -z "$1" ]]; then
+        echo "arch is required"
+        help
+        exit 1
+fi
+GOARCH=$1
+shift
+
+if [[ $CGO_ENABLED -eq 1 ]] &&  [[ "$GOARCH" == "arm64" ]]; then
+        CC=aarch64-linux-gnu-gcc
+        CXX=aarch64-linux-gnu-g++
+fi
+
+if [[ $CGO_ENABLED -eq 1 ]] && [[ "$GOOS" == "windows" ]]; then
+        if [[ "$GOARCH" == "amd64" ]]; then
+                CC=x86_64-w64-mingw32-gcc
+                CXX=x86_64-w64-mingw32-g++
+        else
+                CC=i686-w64-mingw32-gcc
+                CXX=i686-w64-mingw32-g++
+        fi
+fi
+
+if [[ -z "$O_NAME" ]]; then
+        O_NAME=$APP
+fi
+
+if [[ ! -d $BIN_DIR ]]; then
+        mkdir $BIN_DIR
+fi
+
+
+O_ARCH=$(arch_to_file $GOARCH)
+
+LDFLAGS=$(build_ldflags)
+OUTPUT=$BIN_DIR/${O_NAME}_${VERSION}_$GOOS-$O_ARCH
+if [[ $GOOS == "windows" ]]; then
+        OUTPUT=$OUTPUT.exe
+fi
+
+CMD="go build -o $OUTPUT -v --ldflags=\"$LDFLAGS\" $(get_main $APP) $@"
+
+if [[ $VERBOSE ]]; then
+        echo "Building $APP for $GOOS/$GOARCH..."
+        echo $CMD
+fi
+
+# Ignore a failure so we can capture the error message and print a custom one
+set +e
+
+# Run the build command
+ERROR=$(eval $CMD 2>&1)
+
+# Check if the build was successful
+if [[ $? -ne 0 ]]; then
+        echo "Failed to build $APP for $GOOS/$GOARCH: "
+        echo "  $ERROR"
+        exit $?
+fi
+
+# Print the output file
+echo $OUTPUT
+exit 0

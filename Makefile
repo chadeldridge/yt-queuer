@@ -1,49 +1,105 @@
 # Makefile
 
-ROOT_DIR:=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
-TARGET_DIR=${ROOT_DIR}/bin
-APP_NAME=ytqueuer
-TARGET_APP=$(TARGET_DIR)/$(APP_NAME)
-PACKAGE_DIR=${ROOT_DIR}/pkg
-GOOS=linux
-GOARCH=amd64
+#ROOT_DIR:=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+BIN_DIR=bin
+BUILD_DIR=build
+WOLAPP_NAME=wol
+YTAPP_NAME=ytqueuer
+WOL_APP=
+YT_APP=
+GOOS=$(shell go env GOOS)
+GOARCH=$(shell go env GOARCH)
+ARCHIVE_DIR=${BUILD_DIR}/${YTAPP_NAME}
+
+test:
+	$(call get_arch)
+	@echo "BIN_DIR: ${BIN_DIR}"
+	@echo "BUILD_DIR: ${BUILD_DIR}"
+	@echo "WOLAPP_NAME: ${WOLAPP_NAME}"
+	@echo "WOL_APP: ${WOL_APP}"
+	@echo "YTAPP_NAME: ${YTAPP_NAME}"
+	@echo "YT_APP: ${YT_APP}"
+.PHONY: test
 
 tidy:
 	@go mod tidy
 .PHONY: tidy
 
-build: npm-build go-build package
+build: tidy npm-build wol-build yt-build package
 	@echo "Done.\n"
 .PHONY: build
 
-build-arm64: npm-build go-build-arm64 go-build package
+build-arm64: tidy npm-build wol-setup-arm64 wol-build yt-setup-arm64 yt-build package
 	@echo "Done.\n"
 .PHONY: build-arm64
 
-run: npm-build build
-	@${TARGET_DIR}/${APP_NAME}
+run: tidy npm-build yt-build wol-build copy
+	@cp -r certs ${ARCHIVE_DIR}/
+	@cp -r db ${ARCHIVE_DIR}/
+	@cd ${ARCHIVE_DIR} && ./${YTAPP_NAME} start
 .PHONY: run
+
+stop: build
+	@bin/${YTAPP_NAME} stop
+.PHONY: stop
+
+wol-build:
+	$(eval WOL_APP=$(shell ./tools/builder ${WOLAPP_NAME} ${GOOS} ${GOARCH}))
+	@echo "WOL_APP: ${WOL_APP}"
+.PHONY: build-wol
+
+wol-build-arm64:
+	$(eval GOARCH=arm64)
+	$(eval WOL_APP=$(shell ./tools/builder ${WOLAPP_NAME} ${GOOS} ${GOARCH}))
+	@echo "WOL_APP: ${WOL_APP}"
+.PHONY: wol-build-arm64
 
 npm-build:
 	@echo "Building frontend..."
-	@npm run build
+	@npm run -s build
 .PHONY: npm-build
 
-go-build:
-	@echo "Building for ${GOOS}/${GOARCH}..."
-	@if [ ! -d ${TARGET_DIR} ]; then mkdir ${TARGET_DIR}; fi && cd cmd/server/ && env GOOS=${GOOS} GOARCH=${GOARCH} go build -o ${TARGET_APP} && cp ${TARGET_APP} ${PACKAGE_DIR}/ytqueuer
-.PHONY: go-build
+yt-build:
+	$(eval YT_APP=$(shell ./tools/builder ${YTAPP_NAME} ${GOOS} ${GOARCH}))
+	@echo "YT_APP: ${YT_APP}"
+.PHONY: yt-build
 
-go-build-arm64:
+yt-build-arm64:
 	$(eval GOARCH=arm64)
-	$(eval TARGET_NAME=${APP_NAME}_${GOARCH})
-	$(eval TARGET_APP=${TARGET_DIR}/${TARGET_NAME})
-.PHONY: go-build-arm64
+	$(eval YT_APP=$(shell ./tools/builder ${YTAPP_NAME} ${GOOS} ${GOARCH}))
+	@echo "YT_APP: ${YT_APP}"
+.PHONY: yt-build-arm64
+
+copy:
+	@rm -rf ${ARCHIVE_DIR}
+	$(eval ARCHIVE_DIR=$(shell ./tools/packager -c ${YTAPP_NAME} ${GOOS} ${GOARCH} \
+		-f 'sys/*' \
+		-f LICENSE \
+		-f ${WOL_APP}:wol \
+		-f ${YT_APP}:ytqueuer \
+		-f public/))
+.PHONY: copy
 
 package:
-	@echo "Packaging..."
-	@if [ ! -d ${PACKAGE_DIR} ]; then mkdir ${PACKAGE_DIR}; fi || exit 1
-	@cp ${TARGET_APP} ${PACKAGE_DIR}/${APP_NAME}
-	@cp LICENSE ${PACKAGE_DIR}/
-	@cp -r public ${PACKAGE_DIR}/
+	@rm -rf ${ARCHIVE_DIR}
+	$(eval ARCHIVE_DIR=$(shell ./tools/packager ${YTAPP_NAME} ${GOOS} ${GOARCH} \
+		-f 'sys/*' \
+		-f LICENSE \
+		-f ${WOL_APP}:wol \
+		-f ${YT_APP}:ytqueuer \
+		-f public/))
 .PHONY: package
+
+package-public:
+	@if [ ! -d ${BUILD_DIR}/public ]; then \
+		mkdir -p ${BUILD_DIR}/public/css && \
+		mkdir ${BUILD_DIR}/public/js; \
+		fi || exit 1
+	@cp -r ${ROOT_DIR}/public/*.html ${BUILD_DIR}/public/
+	@cp -r ${ROOT_DIR}/public/css/*.min.css ${BUILD_DIR}/public/css/
+	@cp -r ${ROOT_DIR}/public/js/*.js ${BUILD_DIR}/public/js/
+.PHONY: package-public
+
+git-tags:
+	@git tag -n
+.PHONY: git-tags

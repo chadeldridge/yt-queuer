@@ -1,0 +1,17 @@
+[Unit]
+Description=A service to manage youtube playlists
+After=network.target
+
+[Service]
+Type=exec
+Restart=always
+User=ytqueuer
+Group=ytqueuer
+WorkingDirectory=/opt/ytqueuer
+ExecStart=/opt/ytqueuer/ytqueuer start
+ExecStop=/opt/ytqueuer/ytqueuer stop
+ExecReload=/opt/ytqueuer/ytqueuer stop && /opt/ytqueuer/ytqueuer start
+
+[Install]
+WantedBy=multi-user.target
+RequiredBy=network.target

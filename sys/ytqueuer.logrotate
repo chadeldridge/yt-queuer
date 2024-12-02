@@ -1,0 +1,11 @@
+/opt/ytqueuer/logs/* {
+    daily
+    missingok
+    rotate 3
+    compress
+    delaycompress
+    notifempty
+    create 644 ytqueuer ytqueuer
+    dateext
+    dataformat -%Y%m%d
+}

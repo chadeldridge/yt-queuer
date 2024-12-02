@@ -4,8 +4,11 @@
   "description": "YouTube video queuer for remote play.",
   "main": "public/index.html",
   "scripts": {
-    "build": "tailwindcss build -i public/css/base.css -o public/css/tailwind.min.css --minify",
-    "watch": "tailwindcss build -i public/css/base.css -o public/css/tailwind.min.css --watch"
+    "watch": "tailwindcss build -i public/css/base.css -o public/css/tailwind.min.css --watch",
+    "build": "npm run min-tailwind && npm run min-player && npm run min-controller",
+    "min-tailwind": "tailwindcss build -i public/css/base.css -o public/css/tailwind.min.css --minify",
+    "min-player": "google-closure-compiler public/js/app.js public/js/player.js --js_output_file public/js/player.min.js",
+    "min-controller": "google-closure-compiler public/js/app.js public/js/controller.js --js_output_file public/js/controller.min.js"
   },
   "author": "",
   "license": "ISC",

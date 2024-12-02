@@ -27,6 +27,9 @@ assets
 
 # Other directories to ignore
 bin/
-pkg/
-node_modules/
+build/ytqueuer
 certs/
+db/
+node_modules/
+
+dist/

@@ -14,24 +14,7 @@ html, body {
         color: var(--light-color)
 }
 
-.header {
-        display: flex;
-        flex-direction: row;
-        width: 100%;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.75rem;
-}
-
-.material-icons {
-        font-variation-settings:
-        'FILL' 0,
-        'wght' 400,
-        'GRAD' 0,
-        'opsz' 24
-}
-
-.material-icons.md-24 {
-        font-size: 1.5rem;
-        line-height: 2rem;
+.queue-pane {
+        min-height: calc("100vh - 64px");
+        height: calc("100vh - 64px");
 }

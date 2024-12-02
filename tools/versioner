@@ -1,0 +1,97 @@
+#!/bin/bash
+
+help() {
+        echo "versioner - Displays and updates the version of the project. The VERSION file must be present in same"
+        echo "  directory versioner in run from or one directory up. Flag order determines oder of operations."
+        echo "  $0 -s v1.0.0-1 -mnpp would result in v1.2.1-1 while $0 -mnpp -s v1.0.0-1 would result in v1.0.0-1."
+        echo
+        echo "VERSION file format:"
+        echo "  v<major>.<minor>.<patch>-<commits>"
+        echo
+        echo "Usage: $0 [options]"
+        echo
+        echo "Options:"
+        echo "  -h, --help        Display this help message"
+        echo "  -m, --major       Increment the major version"
+        echo "  -n, --minor       Increment the minor version"
+        echo "  -p, --patch       Increment the patch version"
+        echo "  -s, --set         Set the version to the given value"
+        echo "  -t, --tag         Create a git tag. If this option is used without incrementing the version it will"
+        echo "                    tag the current version."
+        echo
+        echo "Examples:"
+        echo "  $ cat VERSION"
+        echo "  v0.1.0-1"
+        echo "  $ $0 -m"
+        echo "  v1.0.0-1"
+        echo "  $ $0 -p"
+        echo "  v1.0.1-1"
+        echo "  $ $0 -nn"
+        echo "  v1.2.0-1"
+        echo
+        echo "  $ cat VERSION"
+        echo "  v0.1.0-1"
+        echo "  $ $0 -mnnp -t"
+        echo "  v1.2.1-1"
+}
+
+OPTS=$(getopt -o hmnps:t --long help,major,minor,patch,set:,tag -n 'versioner' -- "$@")
+if [ $? != 0 ]; then echo; help; exit 1; fi
+
+eval set -- "$OPTS"
+set -e 
+
+VERSION=
+if [[ -f "VERSION" ]]; then
+    VERSION=$(cat VERSION)
+elif [[ -f ../VERSION ]]; then
+    VERSION=$(cat ../VERSION)
+else
+    echo "VERSION file not found" >&2
+    exit 1
+fi
+
+# If the VERSION file was empty, set it to a default value.
+if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]]; then
+echo "VERSION file is not in the correct format '$VERSION'. Resetting!" >&2
+    VERSION="v0.0.0-0"
+fi
+
+MAJOR=
+MINOR=
+PATCH=
+parse_version() {
+        if [[ $VERSION == v* ]]; then
+                VERSION=${VERSION:1}
+        fi
+
+        VERSION=${VERSION%-*}
+        local v=(${VERSION//./ })
+        MAJOR=${v[0]}
+        MINOR=${v[1]}
+        PATCH=${v[2]}
+}
+
+parse_version
+
+COMMITS=$(git rev-list --count HEAD)
+TAG=false
+
+while true; do
+    case $1 in
+        --) shift; break ;;
+        -h | --help) help; exit 0 ;;
+        -m | --major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0; shift ;;
+        -n | --minor) MINOR=$((MINOR + 1)); PATCH=0; shift ;;
+        -p | --patch) PATCH=$((PATCH + 1)); shift ;;
+        -s | --set) VERSION=$2; shift 2 ;;
+        -t | --tag) TAG=true; shift ;;
+        *) echo "Unknown option: $1" >&2; help; exit 1 ;;
+    esac
+done
+
+if [[ $TAG == true ]]; then
+        git tag -a "v${MAJOR}.${MINOR}.${PATCH}-${COMMITS}" -m "v${MAJOR}.${MINOR}.${PATCH}-${COMMITS}"
+fi
+
+echo "v${MAJOR}.${MINOR}.${PATCH}-${COMMITS}" | tee VERSION

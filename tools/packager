@@ -1,0 +1,211 @@
+#!/bin/bash
+
+# Try to find where our common.sh file is so we can source.
+TOOLS=
+if [[ -f tools/common.sh ]]; then
+        TOOLS="tools"
+elif [[ -f common.sh ]]; then
+        TOOLS=.
+else
+        echo "common.sh not found: " `pwd`
+        exit 1
+fi
+source $TOOLS/common.sh
+
+# Fail on any error
+set -e
+
+# Do not unpack globs. This prevents premature expansion of wildcards lieke '*'.
+set -f
+
+help() {
+        echo "Usage: $0 [options] <app_name> <os> <arch>"
+        echo
+        echo "Options:"
+        echo "  -c, --copy-only"
+        echo "         Only copy files, do not create archive"
+        echo
+        echo "  -f, --file=<foo/file1>[:bar/file2]"
+        echo "         File to include in archive. Can be a file or directory. If a directory is provided, all"
+        echo "         provided, all files in the directory will be included. If a wildcard is given, it will be"
+        echo "         expanded. Each expanded file will share the same output path. You may specify multiple"
+        echo "         files, each with its own -f option. See Examples below."
+        echo "  -h, --help                     Display this help message"
+        echo "      --verbose                  Enable verbose output"
+        echo "  -v, --version                  Version"
+        echo "  -z, --zip                      Create a zip archive instead of tar.gz"
+        echo
+        echo "Examples:"
+        echo "  Move a file to the archive root directory and rename it:"
+        echo "  $ packager -f bin/myapp_v0.1.0_linux_x86-64:myapp my_app linux amd64"
+        echo "  build/my_app/myapp"
+        echo
+        echo "  Move a directory into a new directoring inside the archive directory:"
+        echo "  -f shared/js:public/ my_app linux amd64"
+        echo "  build/my_app/public/js"
+        echo
+        echo "  Copy all files in a directory to the archive root directory:"
+        echo "  -f 'sys/*' my_app linux amd64"
+        echo "  copy all files in sys to build/my_app/"
+        echo "  Note: You must escape the wildcard to prevent premature expansion."
+        echo
+}
+
+strip_root() {
+        local path=$1
+        if [[ $path == /* ]]; then
+                echo ${path:1}
+        else
+                echo $path
+        fi
+}
+
+strip_file() {
+        echo "${1%/*}"
+}
+
+process_file() {
+        arg=$1
+        # If we have multiple values in arg, split them. Delimiter is ":".
+        if [[ "$arg" == *":"* ]]; then
+                elem="${arg%%:*}"
+                FILES+=($elem)
+                if [[ ${t[1]} == "/" ]]; then
+                        OUT_FILES+=("/")
+                else
+                        OUT_FILES+=($(strip_root "${arg#$elem:}"))
+                fi
+        # Otherwise treat it as a single value.
+        else
+                if [[ "$arg" == *'*'* ]]; then
+                        # Assume we are fuzzy matching.
+                        FILES+=("$arg")
+                        out=$(strip_root $2)
+                        out=$(strip_file $out)
+
+                        if [[ $out == "" ]]; then
+                                OUT_FILES+=("/")
+                        else
+                                OUT_FILES+=("$out/")
+                        fi
+                elif [[ -f $arg ]]; then
+                        FILES+=("$arg")
+                        OUT_FILES+=($(strip_root $arg))
+                elif [[ -d $arg ]]; then
+                        FILES+=("$arg")
+                        OUT_FILES+=("/")
+                else
+                        echo "unknown value for -f: $arg" >&2
+                        help
+                        exit 1
+                fi
+        fi
+}
+
+OPTS=$(getopt -o cf:hv:z --long copy-only,file:,help,verbose,version:,zip -n 'packager' -- "$@")
+if [ $? != 0 ]; then echo; help; exit 1; fi
+
+eval set -- "$OPTS"
+
+ARCHIVE_NAME=
+COPY_ONLY=false
+VERSION=dev
+FILES=()
+OUT_FILES=()
+VERBOSE=false
+ZIP=false
+
+while true; do
+        case $1 in
+                --) shift; break ;;
+                -c | --copy-only) COPY_ONLY=true; shift ;;
+                -f | --file) process_file $2; shift 2 ;;
+                -h | --help) help; exit 0 ;;
+                --verbose) VERBOSE=true; shift ;;
+                -v | --version) VERSION=$2; shift 2 ;;
+                -z | --zip) ZIP=true; shift ;;
+                *) help; exit 1 ;;
+        esac
+done
+
+if [[ -z "$1" ]]; then
+        echo "archive name is required" >&2
+        help
+        exit 1
+fi
+ARCHIVE_NAME=$1
+shift
+
+if [[ -z "$1" ]]; then
+        echo "os is required" >&2
+        help
+        exit 1
+fi
+GOOS=$1
+shift
+
+if [[ -z "$1" ]]; then
+        echo "output is required" >&2
+        help
+        exit 1
+fi
+GOARCH=$(arch_to_file $1)
+shift
+
+ARCHIVE_DIR=$BUILD_DIR/$ARCHIVE_NAME
+
+if [[ ! -d $ARCHIVE_DIR ]]; then
+        print_verbose -n "Making $ARCHIVE_DIR..."
+        mkdir -p $ARCHIVE_DIR
+        print_verbose "done."
+fi
+
+# Start unpacking globs. This will allow our copy commands to expand wildcards.
+set +f
+
+l=${#FILES[@]}
+for (( i=0; i<${l}; i++ )); do
+        out=$ARCHIVE_DIR
+        if [[ ${OUT_FILES[$i]} == "/" ]]; then
+                out=$ARCHIVE_DIR/
+        else
+                out=$ARCHIVE_DIR/${OUT_FILES[$i]}
+                d=$(echo $out | sed 's![^/]*$!!')
+                if [[ ! -d $d ]]; then
+                        echo -n "Making $d..."
+                        mkdir -p $d
+                        echo "done."
+                fi
+        fi
+
+        #cp -r ${FILES[$i]} $ARCHIVE_DIR/${OUT_FILES[$i]}
+        print_verbose -n "copying ${FILES[$i]} -> $out..."
+        cp -r ${FILES[$i]} $out
+        print_verbose "done."
+done
+
+# Exit if we are only copying files.
+if $COPY_ONLY; then
+        echo $ARCHIVE_DIR
+        exit 0
+fi
+
+# Create the archive.
+ARCHIVE=${ARCHIVE_NAME}_${VERSION}_$GOOS-$GOARCH
+if $ZIP; then
+        ARCHIVE+=.zip
+else
+        ARCHIVE+=.tar.gz
+fi
+
+cd $BUILD_DIR
+print_verbose -n "Creating archive $ARCHIVE..."
+if $ZIP; then
+        zip -qr $ARCHIVE $ARCHIVE_NAME
+else
+        tar -czf $ARCHIVE $ARCHIVE_NAME
+fi
+print_verbose "done."
+
+echo $BUILD_DIR/$ARCHIVE
+exit 0

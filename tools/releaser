@@ -1,0 +1,159 @@
+#!/bin/bash
+
+# Supported Architectures and Operating Systems
+S_ARCH=("amd64" "386" "arm64")
+S_OSES=("linux" "darwin")
+#S_OSES=("linux" "darwin" "windows")
+IGNORE=("windows/arm64")
+
+# Try to find where our common.sh file is so we can source.
+TOOLS=
+if [[ -f tools/common.sh ]]; then
+        TOOLS="./tools"
+elif [[ -f common.sh ]]; then
+        TOOLS=.
+else
+        echo "common.sh not found: " `pwd`
+        exit 1
+fi
+source $TOOLS/common.sh
+
+help() {
+        echo "Usage: releaser [options] <app_name>"
+        echo
+        echo "Options:"
+        echo "  -h, --hash=<commit>            Commit hash to use for build"
+        echo "      --help                     Display this help message"
+        echo "  -t, --time=<time>              Time to use for build"
+        echo "  -u, --user=<user>              User to use for build"
+        echo "  -q, --quiet                    Suprress output"
+        echo "  -v, --version=<version>        Version to use for build"
+        echo
+}
+
+get_builder_args() {
+        # Strip the binary for release builds.
+        local -a build_args="-s -t $BUILD_TIME -u $BUILD_USER -v $BUILD_VERSION -h $BUILD_HASH"
+
+        echo $build_args
+}
+
+get_packager_args() {
+        local -a packager_args="-v $BUILD_VERSION"
+        if [[ $GOOS == "windows" ]]; then
+                packager_args+=" -z"
+        fi
+
+        echo $packager_args
+}
+
+OPTS=$(getopt -o h:qt:u:v --long hash:,help,quiet,time-format:,user:,version: -n 'releaser' -- "$@")
+if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
+
+eval set -- "$OPTS"
+
+TIME_FORMAT="%Y-%m-%dT%H:%M:%SZ"
+BUILD_HASH=$(git rev-parse --short HEAD)
+BUILD_USER=$(git config user.email)
+BUILD_VERSION="dev"
+VERBOSE=true
+
+while true; do
+        case $1 in
+                --) shift; break ;;
+                -h | --hash) BUILD_HASH=$2; shift 2 ;;
+                --help) help; exit 0 ;;
+                -t | --time-format) TIME_FORMAT=$2; shift 2 ;;
+                -u | --user) BUILD_USER=$2; shift 2 ;;
+                -v | --version) BUILD_VERSION=$2; shift 2 ;;
+                -q | --quiet) VERBOSE=false; shift ;;
+                *) help; exit 1 ;;
+        esac
+done
+BUILD_TIME=$(date -u +$TIME_FORMAT)
+
+if [[ -z "$1" ]]; then
+        echo "app name is required"
+        exit 1
+fi
+APP=$1
+
+if $VERBOSE; then
+        echo "Building $APP"
+        echo " - BUILD_HASH: ${BUILD_HASH}"
+        echo " - BUILD_TIME: ${BUILD_TIME}"
+        echo " - BUILD_USER: ${BUILD_USER}"
+        echo " - BUILD_VERSION: ${BUILD_VERSION}"
+        echo
+fi
+
+# Pre-build actions
+print_verbose "Running pre-build actions:"
+
+print_verbose -n " - go mod tidy..."
+go mod tidy
+print_verbose "done."
+
+WOL_APP=
+YT_APP=
+
+# Exit if any build operation fails. Replace with error handling later.
+set -e
+
+# Build binaries for each supported architecture and operating system.
+for GOOS in "${S_OSES[@]}"; do
+        for GOARCH in "${S_ARCH[@]}"; do
+                if [[ " ${IGNORE[@]} " =~ " ${GOOS}/${GOARCH} " ]]; then
+                        print_verbose "Skipping ${GOOS}/${GOARCH}"
+                        continue
+                fi
+
+                print_verbose "Building ${APP} for ${GOOS}/${GOARCH}:"
+
+                # Clean up the build directory.
+                print_verbose -n " - Cleaning up build directory..."
+                rm -rf $BUILD_DIR/$APP
+
+                # Build wol
+                print_verbose " - $TOOLS/builder -o wol $(get_builder_args) wol $GOOS $GOARCH"
+                WOL_APP=$($TOOLS/builder -o wol $(get_builder_args) wol $GOOS $GOARCH 2>&1)
+                if [ $? -ne 0 ]; then
+                        echo "Failed to build wol for ${GOOS}/${GOARCH}"
+                        echo $WOL_APP
+                        exit 1
+                fi
+
+                # Build ytqueuer
+                print_verbose " - $TOOLS/builder -o ytqueuer -c $(get_builder_args) ytqueuer $GOOS $GOARCH"
+                YT_APP=$($TOOLS/builder -o ytqueuer -c $(get_builder_args) ytqueuer $GOOS $GOARCH 2>&1)
+                if [ $? -ne 0 ]; then
+                        echo "Failed to build ytqueuer for ${GOOS}/${GOARCH}"
+                        echo $YT_APP
+                        exit 1
+                fi
+
+                # Package the binaries and other files into a release archive.
+                WOL=wol
+                YT=ytqueuer
+                if [[ $GOOS == "windows" ]]; then
+                        WOL=wol.exe
+                        YT=ytqueuer.exe
+                fi
+	        print_verbose " - $TOOLS/packager $APP $GOOS $GOARCH $(get_packager_args) -f 'sys/*' -f LICENSE -f ${WOL_APP}:wol -f ${YT_APP}:ytqueuer -f public/"
+	        A_SRC=$($TOOLS/packager $APP $GOOS $GOARCH \
+                        $(get_packager_args) \
+		        --file 'sys/*' \
+		        --file LICENSE \
+		        --file $WOL_APP:$WOL \
+		        --file $YT_APP:$YT \
+		        --file public/)
+
+                print_verbose -n " - Moving $A_SRC to dist/..."
+                A_DST=$DIST_DIR/$(basename $A_SRC)
+                mv -f $A_SRC $A_DST
+                print_verbose "done."
+
+                print_verbose "Finished building: dist/$A_DST"
+                print_verbose
+        done
+done
